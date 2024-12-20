@@ -9,46 +9,48 @@ try:
 except ImportError:
     tqdm = lambda x, *args, **kwargs: x  # Fallback: tqdm becomes a no-op
 
+def get_policy(q_network=None):
+    def random_action(env, agent, observation):
+        return env.action_space(agent).sample()
+    
+    def get_action(env, agent, observation):
+        observation = (
+            torch.Tensor(observation).float().permute([2, 0, 1]).unsqueeze(0)
+        )
+        with torch.no_grad():
+            q_values = q_network(observation)
+        action = torch.argmax(q_values, dim=1).numpy()[0]
+
+        return action
+    if q_network is None:
+        return random_action 
+    
+    return get_action
+
+def load_network(path, architecture, observation_space, action_space):
+    model = architecture(observation_space, action_space)
+    model.load_state_dict(
+        torch.load(path, weights_only=True, map_location="cpu")
+    )
+    return model
 
 def eval():
     max_cycles = 300
     env = battle_v4.env(map_size=45, max_cycles=max_cycles)
+    observation_space = env.observation_space("red_0").shape
+    action_space = env.action_space("red_0").n
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    def random_policy(env, agent, obs):
-        return env.action_space(agent).sample()
+    red_network = load_network('red.pt', QNetwork, observation_space, action_space)
+    red_final_network = load_network('red_final.pt', FinalQNetwork, observation_space, action_space)
+    blue_network = load_network('blue.pt', FinalQNetwork, observation_space, action_space)
 
-    q_network = QNetwork(
-        env.observation_space("red_0").shape, env.action_space("red_0").n
-    )
-    q_network.load_state_dict(
-        torch.load("red.pt", weights_only=True, map_location="cpu")
-    )
-    q_network.to(device)
+    random_policy = get_policy()
+    red_policy = get_policy(red_network)
+    red_final_policy = get_policy(red_final_network)
+    blue_policy = get_policy(blue_network)
 
-    final_q_network = FinalQNetwork(
-        env.observation_space("red_0").shape, env.action_space("red_0").n
-    )
-    final_q_network.load_state_dict(
-        torch.load("red_final.pt", weights_only=True, map_location="cpu")
-    )
-    final_q_network.to(device)
-
-    def pretrain_policy(env, agent, obs):
-        observation = (
-            torch.Tensor(obs).float().permute([2, 0, 1]).unsqueeze(0).to(device)
-        )
-        with torch.no_grad():
-            q_values = q_network(observation)
-        return torch.argmax(q_values, dim=1).cpu().numpy()[0]
-
-    def final_pretrain_policy(env, agent, obs):
-        observation = (
-            torch.Tensor(obs).float().permute([2, 0, 1]).unsqueeze(0).to(device)
-        )
-        with torch.no_grad():
-            q_values = final_q_network(observation)
-        return torch.argmax(q_values, dim=1).cpu().numpy()[0]
 
     def run_eval(env, red_policy, blue_policy, n_episode: int = 100):
         red_win, blue_win = [], []
@@ -101,7 +103,7 @@ def eval():
     print("Eval with random policy")
     print(
         run_eval(
-            env=env, red_policy=random_policy, blue_policy=random_policy, n_episode=30
+            env=env, red_policy=random_policy, blue_policy=blue_policy, n_episode=30
         )
     )
     print("=" * 20)
@@ -109,7 +111,7 @@ def eval():
     print("Eval with trained policy")
     print(
         run_eval(
-            env=env, red_policy=pretrain_policy, blue_policy=random_policy, n_episode=30
+            env=env, red_policy=red_policy, blue_policy=blue_policy, n_episode=30
         )
     )
     print("=" * 20)
@@ -118,8 +120,8 @@ def eval():
     print(
         run_eval(
             env=env,
-            red_policy=final_pretrain_policy,
-            blue_policy=random_policy,
+            red_policy=red_final_policy,
+            blue_policy=blue_policy,
             n_episode=30,
         )
     )
