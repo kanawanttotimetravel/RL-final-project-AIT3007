@@ -10,6 +10,9 @@ In this project, we implemented and trained a model on the MAgent2 platform. Our
 - vs Pretrained Opponent: Win 30, Lose 0, Draw 0
 - vs Final Pretrained Opponent: Win 30, Lose 0, Draw 0
 
+## Training
+The training code for the best model is in `dqn-self-play.ipynb`. The code is run purely on a Jupyter notebook, so no further requirements is needed. To run the training code, you can import the file to Google Colab or Kaggle then run. 
+
 ## Evaluation
 To replicate the evaluation
 ```
